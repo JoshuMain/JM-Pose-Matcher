@@ -92,10 +92,19 @@ For landmarks that are visible in both live frame and template:
 - The program estimates a **similarity transform** (scale + rotation + translation) that best maps live points onto template points using Umeyama alignment.
 - After transforming the live points, it computes an RMS distance to the template.
 
-That RMS distance is normalized by the template image diagonal and turned into a score:
+That RMS distance is normalized by the template image diagonal and turned into a score.
 
-- Small error ⇒ score near **100**
-- Large error ⇒ score near **0**
+#### Matching Algorithm
+The scoring system uses an exponential decay function:
+
+```math
+score = 100 \times e^{-k \times relative\_distance}
+```
+
+Where:
+- `relative_distance` = RMS distance normalized by image diagonal
+- `k` = sensitivity constant (default: 40)
+- **Result**: 0-100% match score
 
 _Note: If facial tracking is disabled, this is then used to get a match score which is returned as a percentage._
 
@@ -117,6 +126,7 @@ If both pose and face scores exist:
 
 `combined = pose_weight * pose_score + face_weight * face_score`
 
+This distance between joints and meshes approach is faster, however more approximate. Hence making this a lightweight, easy to configure pose matcher!
 ---
 
 ## 🚦 Quality Indicators
@@ -161,8 +171,58 @@ python jm_pose_matcher.py /path/to/templates --no-gui
 ```
 _See Command Line Arguments for more args_
 
+---
+## 🖥️ Command Line Arguments
 
-## Template Images guide (important)
+### Basic Syntax
+```bash
+python jm_pose_matcher.py [TEMPLATES_PATH] [OPTIONS]
+```
+
+### Arguments
+
+| Argument | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `TEMPLATES_PATH` | positional | - | Path to folder with template images (JPG/PNG) |
+| `--no-gui` | flag | false | Skip config window, start video immediately |
+| `--profile` | choice | `default` | Profile: `face_only`, `upper_body`, `default`, `full_body` |
+| `--camera` | int | `0` | Camera index to use |
+| `--mode` | choice | `dynamic` | Matching mode: `dynamic` or `single` |
+| `--compression` | choice | `none` | Image compression: `none`, `low`, `medium`, `high` |
+| `--no-mirror` | flag | false | Disable mirror mode |
+| `--no-quality` | flag | false | Hide quality indicator |
+| `--no-advanced` | flag | false | Hide advanced info bar |
+| `--no-skeleton` | flag | false | Hide skeleton overlays |
+| `--no-face` | flag | false | Disable face matching in scoring |
+| `--face-mesh` | choice | `minimal` | Face mesh detail: `minimal`, `medium`, `full` |
+| `--show-face-mesh` | flag | false | Show face mesh overlay on video |
+
+---
+
+## 🎮 Interactive Controls
+
+### Keyboard Shortcuts (During Video)
+
+| Key | Action |
+| :--- | :--- |
+| **M** | Toggle mirror mode on/off |
+| **F** | Toggle face matching on/off |
+| **[** | Previous template (single mode only) |
+| **]** | Next template (single mode only) |
+| **R** | Return to configuration window |
+| **Q / ESC** | Quit application |
+
+### On-Screen Buttons
+- **Mirror: ON/OFF** - Toggle camera mirroring
+- **Face: ON/OFF** - Enable/disable facial expression scoring
+- **< Prev** - Previous template (single mode)
+- **Next >** - Next template (single mode)
+- **Return** - Go back to config screen
+- **Quit** - Exit application
+
+---
+
+## 📁 Template Images guide (important)
 
 ### Supported formats
 - JPG / PNG
@@ -188,13 +248,192 @@ Use the **Image Compression** item to decrease RAM usage from the preprocessed p
 
 ---
 
+## 🔧 Creating Custom Profiles
 
-## License
-Apache‑2.0 © 2025 Joshua Main
+You can create custom tracking profiles by modifying the `PROFILES` dictionary in the code.
+
+### Profile Structure
+```python
+PROFILES = {
+    "your_profile_name": {
+        "name": "Display Name",
+        "landmarks": [
+            "LANDMARK_NAME_1",
+            "LANDMARK_NAME_2",
+            # ... more landmarks
+        ],
+        "pose_weight": 0.7,   # 0.0 - 1.0
+        "face_weight": 0.3    # 0.0 - 1.0 (must sum to 1.0 with pose_weight)
+    }
+}
+```
+
+### Available Landmarks
+MediaPipe provides 33 pose landmarks. Commonly used:
+
+```python
+# Face
+"NOSE", "LEFT_EYE", "RIGHT_EYE", "LEFT_EAR", "RIGHT_EAR", "MOUTH_LEFT", "MOUTH_RIGHT"
+
+# Torso
+"LEFT_SHOULDER", "RIGHT_SHOULDER", "LEFT_HIP", "RIGHT_HIP"
+
+# Arms
+"LEFT_ELBOW", "RIGHT_ELBOW", "LEFT_WRIST", "RIGHT_WRIST"
+
+# Hands
+"LEFT_PINKY", "RIGHT_PINKY", "LEFT_INDEX", "RIGHT_INDEX", "LEFT_THUMB", "RIGHT_THUMB"
+
+# Legs
+"LEFT_KNEE", "RIGHT_KNEE", "LEFT_ANKLE", "RIGHT_ANKLE"
+
+# Feet
+"LEFT_HEEL", "RIGHT_HEEL", "LEFT_FOOT_INDEX", "RIGHT_FOOT_INDEX"
+```
+
+### Example: Arms Only Profile
+```python
+"arms_focus": {
+    "name": "Arms Focus - Upper Limb Tracking",
+    "landmarks": [
+        "NOSE", "LEFT_EYE", "RIGHT_EYE",  # Stability reference
+        "LEFT_SHOULDER", "RIGHT_SHOULDER",
+        "LEFT_ELBOW", "RIGHT_ELBOW",
+        "LEFT_WRIST", "RIGHT_WRIST"
+    ],
+    "pose_weight": 0.9,  # Prioritize pose
+    "face_weight": 0.1
+}
+```
+
+### Example: Lower Body Profile
+```python
+"lower_body": {
+    "name": "Lower Body - Legs & Core",
+    "landmarks": [
+        "LEFT_HIP", "RIGHT_HIP",
+        "LEFT_KNEE", "RIGHT_KNEE",
+        "LEFT_ANKLE", "RIGHT_ANKLE",
+        "LEFT_HEEL", "RIGHT_HEEL"
+    ],
+    "pose_weight": 1.0,  # Pose only
+    "face_weight": 0.0
+}
+```
+
+### Skeleton Connections
+The skeleton overlay is automatically determined by landmark count. To customize, modify `SKELETON_CONNECTIONS`:
+
+```python
+SKELETON_CONNECTIONS = {
+    8: [  # Your custom 8-landmark profile
+        (0, 1), (0, 2),  # Connections as (landmark_index_A, landmark_index_B)
+        (3, 4),
+        (3, 5), (5, 7),
+        (4, 6), (6, 8)
+    ]
+}
+```
+
+### Weight Configuration
+**Pose Weight + Face Weight must equal 1.0**
+- `pose_weight: 1.0`, `face_weight: 0.0` - Pose only
+- `pose_weight: 0.0`, `face_weight: 1.0` - Face only
+- `pose_weight: 0.5`, `face_weight: 0.5` - Equal balance
+
+Adjust based on your use case importance.
 
 ---
 
-## Tech Used
-- MediaPipe (Pose, FaceMesh)
-- OpenCV
-- NumPy
+## 🎨 Advanced Configuration
+
+### Adjustable Parameters
+Key constants at the top of the script:
+
+```python
+VISIBILITY_THRESHOLD = 0.35        # Landmark confidence threshold (0-1)
+MIN_TEMPLATE_LANDMARKS = 4         # Minimum landmarks to load template
+MIN_MATCH_LANDMARKS = 3            # Minimum landmarks for matching
+TEMPLATE_DISPLAY_WIDTH = 360       # Template panel width (pixels)
+SCORE_K = 40                       # Scoring sensitivity (higher = stricter)
+FPS_SMOOTH_ALPHA = 0.08           # FPS smoothing factor
+HYSTERESIS_THRESHOLD = 5           # Score difference for template switching
+```
+---
+
+## 📊 Performance Tips
+
+### For Large Template Sets (50+ images)
+```bash
+python jm_pose_matcher.py ./large_set \
+  --compression medium \
+  --no-advanced \
+  --face-mesh minimal
+```
+Use compression factors and decrease face mesh quality
+
+### For Low-End Hardware
+**Modify in code:**
+```python
+model_complexity=0                   # Use lite model
+FPS_SMOOTH_ALPHA = 0.2              # Less FPS smoothing
+SCORE_K = 30                        # More lenient matching
+```
+
+**Command line:**
+```bash
+--compression high --no-skeleton --no-face
+```
+Use a lighter model, remove enhancements such as FPS smoothing and use compression, alongside lighter meshes and K scores
+
+### For Maximum Accuracy
+```bash
+python jm_pose_matcher.py ./templates \
+  --profile full_body \
+  --face-mesh full \
+  --show-face-mesh \
+  --compression none
+```
+Max everything, also increase values in code if you wish!
+
+---
+
+## 📄 License
+```
+Copyright 2025 Joshua Main
+SPDX-License-Identifier: Apache-2.0
+```
+Licensed under the Apache License, Version 2.0. See LICENSE file for details.
+
+---
+
+## 🙏 Acknowledgments
+- **MediaPipe** - Google's cross-platform ML framework for pose/face detection
+- **OpenCV** - Computer vision and image processing
+- **NumPy** - Numerical computing for landmark calculations
+
+---
+
+## ❓ Need help or have a request?
+- Open an issue on GitHub with:
+  - your OS (Windows/Linux/macOS)
+  - Python version
+  - `opencv-python` / `mediapipe` versions
+  - steps to reproduce + screenshots/logs if possible
+ 
+---
+
+## 🫶 Support me!
+
+If JM‑PoseMatcher helps you, inspires your work, or saves you time, consider supporting/staring the project. Your support helps me make new cool projects, keep this one up to date; improving accuracy and performance, while shiping new features.
+
+### Ways to support
+- **Star the repository** — it’s the quickest way to help the project get discovered.
+- **Share it** — post a demo video, write a short thread, or show it to friends/classes/communities that would use it.
+- **Contribute** — bug reports, feature requests, documentation improvements, and pull requests are welcome.
+- **Sponsor / donate** — if you’d like to support development financially, you can use one of the options below:
+  - Buy Me a Coffee: https://www.buymeacoffee.com/devjoshu13
+- **Check out my other projects!**
+  - Games and Apps: [https://mainsoftworks.com](https://sites.google.com/view/mainsoftworks)
+  - Personal Portfolio: [joshmain.dev](https://joshmain.dev)
+  - GitHub Profile: https://github.com/JoshuMain
