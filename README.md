@@ -437,3 +437,7 @@ If JM‑PoseMatcher helps you, inspires your work, or saves you time, consider s
   - Games and Apps: [https://mainsoftworks.com](https://sites.google.com/view/mainsoftworks)
   - Personal Portfolio: [joshmain.dev](https://joshmain.dev)
   - GitHub Profile: https://github.com/JoshuMain
+ 
+
+<img width="953" height="804" alt="Basic V1 Config Screen" src="https://github.com/user-attachments/assets/b0e7e00a-d0cf-4fec-883d-c29a4943be36" />
+
